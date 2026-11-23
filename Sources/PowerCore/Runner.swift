@@ -1,9 +1,24 @@
 import Foundation
 import Darwin
 
+private final class TerminationState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+    var value: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return requested }
+        set { lock.lock(); defer { lock.unlock() }; requested = newValue }
+    }
+}
+
 public enum Command {
+    private static let termination = TerminationState()
+    public static var terminationRequested: Bool {
+        get { termination.value }
+        set { termination.value = newValue }
+    }
     /// Each command owns a process group, so timeouts also terminate child processes.
     public static func run(_ executable: String, _ arguments: [String], timeout: Int = 30) throws -> String {
+        guard !terminationRequested else { throw ScheduleError.message("Systemdienst wird beendet; Aktion abgebrochen.") }
         let output = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: output) }
         var actions: posix_spawn_file_actions_t?
@@ -38,11 +53,12 @@ public enum Command {
                 throw ScheduleError.message("Prozessstatus konnte nicht gelesen werden.")
             }
             let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? NSNumber)?.intValue ?? 0
-            if ProcessInfo.processInfo.systemUptime >= deadline || size > 1_048_576 {
+            if terminationRequested || ProcessInfo.processInfo.systemUptime >= deadline || size > 1_048_576 {
                 kill(-pid, SIGTERM)
                 Thread.sleep(forTimeInterval: 0.3)
                 kill(-pid, SIGKILL)
                 while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
+                if terminationRequested { throw ScheduleError.message("Systemdienst wird beendet; laufende Aktion abgebrochen.") }
                 throw ScheduleError.message(size > 1_048_576 ? "Aktion wegen zu großer Ausgabe abgebrochen (1 MB)." : "Zeitlimit von \(timeout) Sekunden überschritten.")
             }
             Thread.sleep(forTimeInterval: 0.1)

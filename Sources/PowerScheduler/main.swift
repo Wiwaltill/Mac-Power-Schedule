@@ -70,6 +70,14 @@ if CommandLine.arguments.dropFirst().contains("--remove-owned-events") {
     }
     exit(0)
 }
+// Dispatch handlers run outside POSIX signal context and can safely update the lock.
+let terminationSources = [SIGTERM, SIGINT].map { value in
+    signal(value, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: value, queue: .global())
+    source.setEventHandler { Command.terminationRequested = true }
+    source.resume()
+    return source
+}
 umask(0o022)
 var state: PersistentState
 if FileManager.default.fileExists(atPath: stateURL.path) {
@@ -79,7 +87,7 @@ if FileManager.default.fileExists(atPath: stateURL.path) {
 var previousConfig: Configuration?
 var lastError = ""
 log("Hintergrunddienst gestartet.")
-while true {
+while !Command.terminationRequested {
     do {
         NSTimeZone.resetSystemTimeZone()
         let config = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: URL(fileURLWithPath: Paths.config)))
@@ -109,5 +117,8 @@ while true {
     } catch {
         if lastError != error.localizedDescription { log("FEHLER: \(error.localizedDescription)"); lastError = error.localizedDescription }
     }
-    Thread.sleep(forTimeInterval: 15)
+    for _ in 0..<150 {
+        if Command.terminationRequested { break }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
 }

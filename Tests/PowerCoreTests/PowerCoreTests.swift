@@ -64,6 +64,17 @@ final class PowerCoreTests: XCTestCase {
         XCTAssertThrowsError(try Command.run("/bin/sh", ["-c", "exit 7"]))
         XCTAssertThrowsError(try Command.run("/nonexistent", []))
     }
+    func testServiceTerminationCancelsRunningCommand() {
+        defer { Command.terminationRequested = false }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+            Command.terminationRequested = true
+        }
+        let started = ProcessInfo.processInfo.systemUptime
+        XCTAssertThrowsError(try Command.run("/bin/sleep", ["10"], timeout: 20)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Systemdienst wird beendet"))
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 5)
+    }
     func testOutputLimitAlsoAppliesToQuicklyExitingProcesses() {
         XCTAssertThrowsError(try Command.run("/bin/dd", ["if=/dev/zero", "bs=1048576", "count=2"])) { error in
             XCTAssertTrue(error.localizedDescription.contains("1 MB"))
