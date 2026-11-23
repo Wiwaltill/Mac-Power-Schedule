@@ -8,6 +8,10 @@ on:
         description: Existing release tag to build (for example v0.1.2)
         required: true
         type: string
+      verify_only:
+        description: Validate signing and notarization without changing release assets
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -16,6 +20,7 @@ concurrency:
 jobs:
   build-and-attach:
     runs-on: macos-15
+    timeout-minutes: 45
     permissions:
       contents: write
     env:
@@ -36,10 +41,87 @@ jobs:
           persist-credentials: false
       - name: Test
         run: swift test
-      - name: Build universal app
+      - name: Import Developer ID into temporary keychain
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+          : "${CERTIFICATE_BASE64:?Missing certificate secret}"
+          : "${CERTIFICATE_PASSWORD:?Missing certificate password secret}"
+          : "${APPLE_TEAM_ID:?Missing Apple team secret}"
+          keychain="$RUNNER_TEMP/mps-signing.keychain-db"
+          certificate="$RUNNER_TEMP/mps-certificate.p12"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$CERTIFICATE_PASSWORD" -k "$keychain" -t cert -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain" > "$RUNNER_TEMP/mps-identities.txt"
+          python3 - <<'PY'
+          import os, pathlib, re
+          lines = pathlib.Path(os.environ['RUNNER_TEMP'], 'mps-identities.txt').read_text().splitlines()
+          team = os.environ['APPLE_TEAM_ID']
+          identities = [re.search(r'\b([A-Fa-f0-9]{40})\b', line).group(1) for line in lines
+                        if 'Developer ID Application:' in line and f'({team})' in line]
+          if len(identities) != 1:
+              raise SystemExit('Expected exactly one valid Developer ID Application identity for the configured team')
+          with open(os.environ['GITHUB_ENV'], 'a') as target:
+              target.write(f'CODESIGN_IDENTITY={identities[0]}\n')
+          PY
+          rm -f "$certificate"
+      - name: Build and sign universal app
         run: scripts/build-app.sh
-      - name: Verify checksum
-        run: cd dist && shasum -a 256 --check SHA256SUMS.txt
-      - name: Attach app to existing release
-        # No --clobber: preserve previously uploaded, possibly signed assets.
+      - name: Notarize, staple and verify
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          : "${APPLE_ID:?Missing Apple ID secret}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Missing notarization password secret}"
+          : "${APPLE_TEAM_ID:?Missing Apple team secret}"
+          xcrun notarytool submit dist/Mac-Power-Schedule.zip \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m --output-format json > "$RUNNER_TEMP/mps-notarization.json"
+          python3 - <<'PY'
+          import json, os, pathlib
+          result = json.loads(pathlib.Path(os.environ['RUNNER_TEMP'], 'mps-notarization.json').read_text())
+          print('Notarization:', result.get('status'), 'Submission:', result.get('id'))
+          if result.get('status') != 'Accepted':
+              raise SystemExit('Apple did not accept this build; no release assets will be uploaded')
+          PY
+          app='dist/Mac Power Schedule.app'
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" dist/Mac-Power-Schedule.zip
+          (cd dist && shasum -a 256 Mac-Power-Schedule.zip > SHA256SUMS.txt && shasum -a 256 --check SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-notarized-app-${{ github.event.release.tag_name || inputs.release_tag }}
+          path: |
+            dist/Mac-Power-Schedule.zip
+            dist/SHA256SUMS.txt
+      - name: Attach signed and notarized app to existing release
+        if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
+        # Existing assets, including manually uploaded builds, are preserved.
         run: gh release upload "$RELEASE_TAG" dist/Mac-Power-Schedule.zip dist/SHA256SUMS.txt
+      - name: Delete temporary signing material
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/mps-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/mps-certificate.p12" "$RUNNER_TEMP/mps-identities.txt"

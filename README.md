@@ -27,7 +27,7 @@ Der Systemdienst arbeitet auch bei geschlossener App. Protokoll, Vorbereitungste
 
 > **Vor dem Einsatz:** Die Shutdown-Zeit startet die Vorbereitung. Nur Shutdowns dieser App führen die Aktionen aus. FileVault verlangt nach dem Einschalten manuelles Entsperren; automatischer VM-Start ist separat einzurichten. Prüfe den vollständigen Ablauf auf deinem Mac, bevor du ihn unbeaufsichtigt nutzt.
 >
-> **Aktuelles Download-Build:** Ad hoc signiert, noch nicht mit Developer ID signiert und nicht notarisiert. macOS kann es beim Öffnen blockieren. Die Prüfsumme liegt im Release.
+> **Geprüfter Download:** Das aktuelle Release ist mit Developer ID signiert und von Apple notarisiert. Eine SHA-256-Prüfsumme liegt im Release.
 
 ## Selbst bauen
 
@@ -39,7 +39,7 @@ swift test
 open "dist/Mac Power Schedule.app"
 ```
 
-Universal-App, ZIP und SHA-256-Prüfsumme entstehen in `dist/`. GitHub Actions prüft jeden Push/PR. Releases werden manuell erstellt. Erst beim Veröffentlichen eines Releases baut ein separater Workflow die App vom Release-Tag und hängt ZIP samt Prüfsumme an. Pushes erzeugen keine Releases; vorhandene Release-Dateien werden nicht überschrieben.
+Universal-App, ZIP und SHA-256-Prüfsumme entstehen in `dist/`. GitHub Actions prüft jeden Push/PR. Releases werden manuell erstellt. Erst beim Veröffentlichen eines Releases baut ein separater Workflow die App vom Release-Tag, signiert und notarisiert sie und hängt ZIP samt Prüfsumme an. Pushes erzeugen keine Releases; vorhandene Release-Dateien werden nicht überschrieben.
 
 ---
 
