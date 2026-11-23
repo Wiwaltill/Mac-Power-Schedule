@@ -84,11 +84,32 @@ if FileManager.default.fileExists(atPath: stateURL.path) {
     do { state = try JSONDecoder().decode(PersistentState.self, from: Data(contentsOf: stateURL)) }
     catch { log("Zustandsdatei beschädigt; keine Aktionen ausgeführt: \(error)"); exit(1) }
 } else { state = PersistentState() }
+let installedExecutable = URL(fileURLWithPath: Paths.executable)
+let loadedDigest: String
+// The root-owned executable is atomically replaced by the authorized installer.
+do {
+    loadedDigest = try ServiceUpdate.digest(of: installedExecutable)
+    let runtime = ServiceRuntime(processID: getpid(), executableDigest: loadedDigest)
+    try JSONEncoder().encode(runtime).write(to: URL(fileURLWithPath: Paths.runtime), options: .atomic)
+} catch {
+    log("Dienstversion konnte nicht festgestellt werden: \(error.localizedDescription)")
+    exit(1)
+}
+func reloadIfReplaced() throws {
+    guard try ServiceUpdate.digest(of: installedExecutable) != loadedDigest else { return }
+    log("Dienstupdate erkannt; neue Version wird im Leerlauf geladen. Zeitplan bleibt aktiv.")
+    let arguments = [strdup(Paths.executable), nil]
+    defer { arguments.forEach { free($0) } }
+    arguments.withUnsafeBufferPointer { _ = execv(Paths.executable, $0.baseAddress!) }
+    throw ScheduleError.message("Dienstupdate konnte nicht geladen werden: \(String(cString: strerror(errno)))")
+}
 var previousConfig: Configuration?
 var lastError = ""
 log("Hintergrunddienst gestartet.")
 while !Command.terminationRequested {
     do {
+        // Never reload from inside executeAll: preparations and the final shutdown finish first.
+        try reloadIfReplaced()
         NSTimeZone.resetSystemTimeZone()
         let config = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: URL(fileURLWithPath: Paths.config)))
         try config.validate()

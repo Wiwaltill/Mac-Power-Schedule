@@ -5,6 +5,7 @@ import ServiceManagement
 import UserNotifications
 
 @MainActor final class AppModel: ObservableObject {
+    let updates = UpdaterController()
     @Published var config = Configuration()
     @Published var message = "Noch kein Zeitplan installiert."
     @Published var logText = ""
@@ -15,11 +16,17 @@ import UserNotifications
     @Published var testOutput = ""
     private let draftURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacPowerSchedule/draft.json")
     init() {
+        updates.preparationIsRunning = { [weak self] in self?.busy ?? false }
         if let data = try? Data(contentsOf: URL(fileURLWithPath: Paths.config)), let saved = try? JSONDecoder().decode(Configuration.self, from: data), (try? saved.validate()) != nil {
             config = saved
             message = "Installierte Einstellungen geladen."
         } else if let data = try? Data(contentsOf: draftURL), let draft = try? JSONDecoder().decode(Configuration.self, from: data), (try? draft.validate()) != nil { config = draft }
         refresh()
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            do { if let result = try Installer.updateServiceIfNeeded() { message = result } }
+            catch { message = "App ist aktuell; Dienstupdate noch ausstehend: \(error.localizedDescription)" }
+        }
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
@@ -128,6 +135,7 @@ import UserNotifications
             }.value
             testOutput = result
             busy = false
+            updates.resumeInstallationIfIdle()
         }
     }
 }
@@ -137,6 +145,9 @@ import UserNotifications
     var body: some Scene {
         WindowGroup("Mac Power Schedule", id: "settings") { SettingsView(model: model) }
             .defaultSize(width: 850, height: 760)
+            .commands {
+                CommandGroup(after: .appInfo) { UpdateControls(updates: model.updates) }
+            }
         MenuBarExtra("Power Schedule", systemImage: "power.circle") {
             MenuContent(model: model)
         }
@@ -147,6 +158,7 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         Button("Einstellungen öffnen") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }
+        UpdateControls(updates: model.updates)
         Button("Protokoll aktualisieren") { model.refresh(); openWindow(id: "settings") }
         Divider()
         Text(model.latestStatus)
@@ -228,6 +240,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 10) {
                             Toggle("App bei Anmeldung öffnen (Menüleiste und Fehlermeldungen)", isOn: Binding(get: { model.loginEnabled }, set: { model.setLogin($0) }))
                             Button("Fehlermitteilungen erlauben …") { model.enableNotifications() }
+                            UpdateSettings(updates: model.updates)
                             Text("Der Dienst arbeitet auch bei geschlossener App. Einschalten benötigt Netzstrom; FileVault verlangt manuelles Entsperren. Deine VMs müssen nach der Anmeldung separat automatisch starten. Nur geplante Shutdowns dieser App führen die Aktionen aus. Ein normaler macOS-Shutdown wird nicht abgefangen.").font(.callout)
                             }.padding(8)
                         }
@@ -255,5 +268,23 @@ struct SettingsView: View {
     private func move(_ id: UUID, by offset: Int) {
         guard let index = model.config.actions.firstIndex(where: { $0.id == id }), model.config.actions.indices.contains(index + offset) else { return }
         model.config.actions.swapAt(index, index + offset)
+    }
+}
+
+struct UpdateControls: View {
+    @ObservedObject var updates: UpdaterController
+    var body: some View {
+        Button("Nach Updates suchen …") { updates.checkForUpdates() }
+            .disabled(!updates.canCheckForUpdates)
+    }
+}
+
+struct UpdateSettings: View {
+    @ObservedObject var updates: UpdaterController
+    var body: some View {
+        Toggle("Automatisch nach App-Updates suchen", isOn: Binding(get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticChecks($0) }))
+        UpdateControls(updates: updates)
+        Text("Updates erhalten den Zeitplan. Die Aktualisierung des Systemdienstes benötigt eine Administratorfreigabe; laufende Dienstaktionen werden zuerst beendet.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }

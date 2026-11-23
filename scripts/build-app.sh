@@ -10,7 +10,11 @@ for arch in arm64 x86_64; do
     swift build -c "$mode" --arch "$arch"
 done
 app="$PWD/dist/Mac Power Schedule.app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
+sparkle="$PWD/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+ditto "$sparkle" "$app/Contents/Frameworks/Sparkle.framework"
+cp .build/artifacts/sparkle/Sparkle/LICENSE "$app/Contents/Resources/Sparkle-LICENSE.txt"
+public_key="$(cat assets/sparkle-public-key.txt)"
 for product in PowerSchedule PowerScheduler; do
     /usr/bin/lipo -create ".build/arm64-apple-macosx/$mode/$product" ".build/x86_64-apple-macosx/$mode/$product" -output "$app/Contents/MacOS/$product"
 done
@@ -30,12 +34,22 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <key>CFBundleShortVersionString</key><string>$version</string>
 <key>CFBundleVersion</key><string>$version</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>SUFeedURL</key><string>https://github.com/Wiwaltill/Mac-Power-Schedule/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>$public_key</string>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SURequireSignedFeed</key><true/>
+<key>SUAllowsAutomaticUpdates</key><false/>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
 identity="${CODESIGN_IDENTITY:--}"
 sign_flags=(--timestamp=none)
 if [[ "$identity" != "-" ]]; then sign_flags=(--timestamp); fi
+framework="$app/Contents/Frameworks/Sparkle.framework"
+for nested in Versions/B/XPCServices/Downloader.xpc Versions/B/XPCServices/Installer.xpc Versions/B/Updater.app Versions/B/Autoupdate; do
+    codesign --force --options runtime "${sign_flags[@]}" --preserve-metadata=entitlements --sign "$identity" "$framework/$nested"
+done
+codesign --force --options runtime "${sign_flags[@]}" --sign "$identity" "$framework"
 codesign --force --options runtime "${sign_flags[@]}" --sign "$identity" "$app/Contents/MacOS/PowerScheduler"
 codesign --force --options runtime "${sign_flags[@]}" --sign "$identity" "$app"
 codesign --verify --deep --strict "$app"

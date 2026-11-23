@@ -7,4 +7,6 @@ identifier='de.wiwaltill.MacPowerSchedule.app'
 /usr/bin/defaults delete "$identifier" >/dev/null 2>&1 || true
 /bin/rm -rf "$HOME/Library/Application Support/MacPowerSchedule" \
     "$HOME/Library/Caches/$identifier" \
+    "$HOME/Library/HTTPStorages/$identifier" \
+    "$HOME/Library/WebKit/$identifier" \
     "$HOME/Library/Saved Application State/$identifier.savedState"

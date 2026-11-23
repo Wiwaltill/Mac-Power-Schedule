@@ -5,12 +5,21 @@ set -euo pipefail
 base='/Library/Application Support/MacPowerSchedule'
 label='de.wiwaltill.MacPowerSchedule'
 plist="/Library/LaunchDaemons/$label.plist"
+service_only=false
+if [[ "$1" == --update-service ]]; then
+    service_only=true
+    [[ -f "$base/configuration.json" && -f "$plist" ]] || { echo 'Kein installierter Dienst vorhanden.' >&2; exit 1; }
+fi
 [[ ! -L "$base" ]] || { echo 'Unsicheres Zielverzeichnis.' >&2; exit 1; }
 /usr/bin/install -d -o root -g wheel -m 755 "$base"
 # Do not restart a running preparation: the worker notices changes itself.
-/usr/bin/install -o root -g wheel -m 755 "$2" "$base/PowerScheduler.new"
+if ! /usr/bin/cmp -s "$2" "$base/PowerScheduler"; then
+    /usr/bin/install -o root -g wheel -m 755 "$2" "$base/PowerScheduler.new"
+    /bin/mv -f "$base/PowerScheduler.new" "$base/PowerScheduler"
+fi
+# Sparkle's app relaunch refreshes only the helper. Configuration/state/events are untouched.
+if $service_only; then exit 0; fi
 /usr/bin/install -o root -g wheel -m 644 "$1" "$base/configuration.json.new"
-/bin/mv -f "$base/PowerScheduler.new" "$base/PowerScheduler"
 /bin/mv -f "$base/configuration.json.new" "$base/configuration.json"
 /bin/cat > "$plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

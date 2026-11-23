@@ -41,6 +41,8 @@ jobs:
           persist-credentials: false
       - name: Test
         run: swift test
+      - name: Test appcast metadata
+        run: python3 -m unittest discover -s scripts/tests
       - name: Import Developer ID into temporary keychain
         env:
           CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
@@ -109,16 +111,25 @@ jobs:
           spctl --assess --type execute --verbose=2 "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" dist/Mac-Power-Schedule.zip
           (cd dist && shasum -a 256 Mac-Power-Schedule.zip > SHA256SUMS.txt && shasum -a 256 --check SHA256SUMS.txt)
+      - name: Sign Sparkle update archive and appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          : "${SPARKLE_PRIVATE_KEY:?Missing Sparkle signing secret}"
+          python3 scripts/make-appcast.py
       - uses: actions/upload-artifact@v4
         with:
           name: signed-notarized-app-${{ github.event.release.tag_name || inputs.release_tag }}
           path: |
             dist/Mac-Power-Schedule.zip
             dist/SHA256SUMS.txt
+            dist/appcast.xml
       - name: Attach signed and notarized app to existing release
         if: github.event_name != 'workflow_dispatch' || !inputs.verify_only
         # Existing assets, including manually uploaded builds, are preserved.
-        run: gh release upload "$RELEASE_TAG" dist/Mac-Power-Schedule.zip dist/SHA256SUMS.txt
+        run: gh release upload "$RELEASE_TAG" dist/Mac-Power-Schedule.zip dist/SHA256SUMS.txt dist/appcast.xml
       - name: Delete temporary signing material
         if: always()
         shell: bash

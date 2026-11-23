@@ -38,6 +38,19 @@ import PowerCore
         try authorize("/bin/bash " + quote(script.path) + " " + quote(file.path) + " " + quote(executable.path))
     }
 
+    static func updateServiceIfNeeded() throws -> String? {
+        guard FileManager.default.fileExists(atPath: Paths.config) else { return nil }
+        let (script, bundled) = try resources(for: "install.sh")
+        guard try ServiceUpdate.needsReplacement(installed: URL(fileURLWithPath: Paths.executable), bundled: bundled) else { return nil }
+        let supportsReload = (try? Data(contentsOf: URL(fileURLWithPath: Paths.runtime))).flatMap {
+            try? JSONDecoder().decode(ServiceRuntime.self, from: $0)
+        } != nil
+        try authorize("/bin/bash " + quote(script.path) + " --update-service " + quote(bundled.path))
+        return supportsReload
+            ? "Dienstdatei aktualisiert. Übernahme im nächsten Leerlauf; Zeitplan und laufende Aktionen bleiben erhalten."
+            : "Dienstdatei aktualisiert; der bisherige Dienst bleibt bis zum nächsten normalen Mac-Neustart aktiv. Der Zeitplan bleibt erhalten. Danach erfolgen weitere Dienstupdates automatisch im Leerlauf."
+    }
+
     static func removeSystemService() throws {
         let (script, executable) = try resources(for: "uninstall.sh")
         // Use the bundled helper even when an installed helper is missing or damaged.
@@ -75,6 +88,8 @@ import PowerCore
         let directories: [URL] = [
             files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacPowerSchedule"),
             files.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent(identifier),
+            files.homeDirectoryForCurrentUser.appendingPathComponent("Library/HTTPStorages/\(identifier)"),
+            files.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(identifier)"),
             files.homeDirectoryForCurrentUser.appendingPathComponent("Library/Saved Application State/\(identifier).savedState")
         ]
         for directory in directories where files.fileExists(atPath: directory.path) {

@@ -226,4 +226,24 @@ final class PowerCoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("calls"), encoding: .utf8), "called\n")
     }
 
+    func testServiceUpdateRecognizesContentsNotOnlyFileMetadata() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let installed = directory.appendingPathComponent("installed")
+        let bundled = directory.appendingPathComponent("bundled")
+        try Data("version-one".utf8).write(to: installed)
+        try Data("version-one".utf8).write(to: bundled)
+        XCTAssertFalse(try ServiceUpdate.needsReplacement(installed: installed, bundled: bundled))
+        let timestamp = Date(timeIntervalSince1970: 1000)
+        try FileManager.default.setAttributes([.modificationDate: timestamp], ofItemAtPath: bundled.path)
+        XCTAssertFalse(try ServiceUpdate.needsReplacement(installed: installed, bundled: bundled))
+        try Data("version-two".utf8).write(to: bundled)
+        try FileManager.default.setAttributes([.modificationDate: timestamp], ofItemAtPath: bundled.path)
+        XCTAssertTrue(try ServiceUpdate.needsReplacement(installed: installed, bundled: bundled))
+        XCTAssertEqual(try String(contentsOf: installed, encoding: .utf8), "version-one")
+        try FileManager.default.removeItem(at: bundled)
+        XCTAssertThrowsError(try ServiceUpdate.needsReplacement(installed: installed, bundled: bundled))
+    }
+
 }

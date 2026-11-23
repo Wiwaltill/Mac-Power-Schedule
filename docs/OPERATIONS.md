@@ -16,7 +16,7 @@ Eine native macOS-App für geplantes Einschalten und sicheres Herunterfahren –
 
 ## Bauen und starten
 
-Voraussetzung: vollständiges Xcode mit Swift 6, aktive Command Line Tools (`xcode-select`). Keine externen Paketabhängigkeiten.
+Voraussetzung: vollständiges Xcode mit Swift 6, aktive Command Line Tools (`xcode-select`). Sparkle wird als fest versioniertes Swift-Package eingebunden.
 
 ```sh
 git clone https://github.com/Wiwaltill/Mac-Power-Schedule.git
@@ -88,7 +88,8 @@ Die lokale Zeitzone des Macs gilt; Änderungen werden beim nächsten Dienstzyklu
 - Nur der durch diese App ausgelöste Shutdown führt Vorbereitungsaktionen aus. Manuelles Ausschalten, andere Zeitpläne und Stromausfälle werden nicht abgefangen.
 - `/sbin/shutdown -h now` fährt nach erfolgreicher Vorbereitung herunter. Geöffnete Dokumente werden dabei nicht mit einem normalen App-Speichern-Dialog behandelt. Wichtige Daten vorher speichern bzw. mit passenden Aktionen sichern.
 - Wenn der Mac länger als acht Tage ausgeschaltet bleibt, sind die vorab registrierten Termine aufgebraucht. Nach dem nächsten manuellen Start füllt der Dienst sie wieder auf.
-- Beim Aktualisieren der App wird die Dienstdatei ersetzt; ein bereits laufender Dienst verwendet seinen bisherigen Programmcode bis zum nächsten Neustart des Macs. Konfigurationsänderungen wirken ohne Neustart. Updates deshalb zunächst mit deaktiviertem Zeitplan anwenden, dann neu starten und wieder aktivieren.
+- Ab Version 0.3.0 übernimmt der Dienst seine neue Datei automatisch im Leerlauf. Konfiguration, Systemtermine und zuletzt bearbeiteter Shutdown bleiben erhalten. Laufende Vorbereitungen werden nicht unterbrochen. Die Administratorfreigabe beim App-Start ersetzt ausschließlich die Dienstdatei und schreibt keine Einstellungen neu.
+- Beim erstmaligen Wechsel von 0.2.x läuft der bisherige Dienst bis zum nächsten normalen Mac-Neustart weiter. Der Zeitplan muss dafür nicht deaktiviert werden. Danach sind spätere Dienstupdates ohne Neustart möglich.
 
 ## Sicherheit und Speicherung
 
@@ -98,7 +99,15 @@ Die lokale Zeitzone des Macs gilt; Änderungen werden beim nächsten Dienstzyklu
 - Systemdateien sind root-eigen und nicht durch normale Benutzer veränderbar. Die Konfiguration und Protokolle sind lokal lesbar; **keine Geheimnisse in Befehle oder Ausgaben schreiben**. Fehlermeldungen können bis zu 1500 Zeichen Befehlsausgabe enthalten.
 - Root-Rechte werden für Systemzeitpläne und den finalen Shutdown verwendet. Vorbereitungsaktionen laufen ohne Root-Rechte unter der installierenden UID.
 - Protokollrotation ab ca. 512 KB; eine vorherige Datei bleibt erhalten. Befehlsausgaben sind auf ca. 1 MB begrenzt und werden vorübergehend mit Modus 0600 gespeichert.
-- Keine Telemetrie, kein Server, keine automatischen Downloads.
+- Keine App-Telemetrie. Sparkle prüft optional Updates über GitHub und lädt sie nach Bestätigung herunter. Appcast und Archive sind zusätzlich mit Ed25519 signiert.
+
+## App aktualisieren
+
+Ab 0.3.0 enthält die Menüleiste „Nach Updates suchen …“. Unter „Betrieb“ gibt es denselben Button und eine Option für automatische Prüfungen. Sparkle verwendet einen signierten HTTPS-Appcast aus dem aktuellen GitHub Release und prüft auch die Signatur des heruntergeladenen Archivs vor dem Entpacken.
+
+Während eines lokalen Vorbereitungstests wird ein angeforderter App-Neustart aufgeschoben. Der separat laufende Systemdienst arbeitet unabhängig vom App-Update weiter. Nach dem App-Neustart wird eine abweichende Dienstdatei erkannt und nach Administratorfreigabe atomar ersetzt; die aktive Konfiguration wird dabei nicht überschrieben. Der Dienst wechselt vor Beginn des nächsten Leerlauf-Zyklus auf die neue Datei. Eine bereits laufende Aktionskette einschließlich ihres abschließenden Shutdowns läuft zuerst zu Ende.
+
+Die Version 0.3.0 muss einmal manuell installiert werden, weil frühere Versionen noch keinen Updater enthalten. Auch hierbei kann der Zeitplan aktiv bleiben. Ein alter 0.2.x-Dienst nutzt die neue Datei ab dem nächsten normalen Mac-Neustart.
 
 ## Pausieren und deinstallieren
 

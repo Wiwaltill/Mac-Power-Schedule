@@ -79,6 +79,8 @@ public enum ScheduleError: LocalizedError {
 }
 public enum Paths {
     public static let directory = "/Library/Application Support/MacPowerSchedule"
+    public static let executable = directory + "/PowerScheduler"
+    public static let runtime = directory + "/runtime.json"
     public static let config = directory + "/configuration.json"
     public static let log = directory + "/scheduler.log"
     public static let label = "de.wiwaltill.MacPowerSchedule"

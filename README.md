@@ -31,9 +31,15 @@ Der Systemdienst arbeitet auch bei geschlossener App. Protokoll, Vorbereitungste
 >
 > **Geprüfter Download:** Das aktuelle Release ist mit Developer ID signiert und von Apple notarisiert. Eine SHA-256-Prüfsumme liegt im Release.
 
+## Updates in der App
+
+Ab Version 0.3.0: **Menüleiste → Nach Updates suchen …**. Automatische Prüfungen lassen sich unter „Betrieb“ aktivieren. Sparkle prüft signierte Updates und installiert sie nach Bestätigung. Der Zeitplan bleibt aktiv; die neue App aktualisiert nach Administratorfreigabe auch den Systemdienst. Dieser lädt neue Versionen zwischen den Vorbereitungen, ohne laufende VM-Shutdowns abzubrechen.
+
+Die erste Version mit Sparkle einmal manuell installieren. Ein bisheriger Dienst aus 0.2.x übernimmt den neuen Mechanismus beim nächsten normalen Mac-Neustart; der Zeitplan muss dafür nicht deaktiviert werden.
+
 ## Selbst bauen
 
-Xcode mit Swift 6 benötigt; keine externen Paketabhängigkeiten.
+Xcode mit Swift 6 benötigt; Sparkle wird über Swift Package Manager geladen.
 
 ```sh
 swift test
