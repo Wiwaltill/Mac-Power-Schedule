@@ -15,10 +15,10 @@ import UserNotifications
     @Published var testOutput = ""
     private let draftURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacPowerSchedule/draft.json")
     init() {
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: Paths.config)), let saved = try? JSONDecoder().decode(Configuration.self, from: data) {
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: Paths.config)), let saved = try? JSONDecoder().decode(Configuration.self, from: data), (try? saved.validate()) != nil {
             config = saved
             message = "Installierte Einstellungen geladen."
-        } else if let data = try? Data(contentsOf: draftURL), let draft = try? JSONDecoder().decode(Configuration.self, from: data) { config = draft }
+        } else if let data = try? Data(contentsOf: draftURL), let draft = try? JSONDecoder().decode(Configuration.self, from: data), (try? draft.validate()) != nil { config = draft }
         refresh()
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
@@ -160,7 +160,7 @@ struct SettingsView: View {
                                             TextField("Name", text: $action.name)
                                             Button { move(action.id, by: -1) } label: { Image(systemName: "arrow.up") }.help("Nach oben")
                                             Button { move(action.id, by: 1) } label: { Image(systemName: "arrow.down") }.help("Nach unten")
-                                            Button(role: .destructive) { model.config.actions.removeAll { $0.id == action.id } } label: { Image(systemName: "trash") }
+                                            Button(role: .destructive) { let id = action.id; model.config.actions.removeAll { $0.id == id } } label: { Image(systemName: "trash") }
                                         }
                                         Picker("Typ", selection: $action.kind) { ForEach(ActionKind.allCases, id: \.self) { Text($0.title).tag($0) } }
                                         if action.kind == .shell {
