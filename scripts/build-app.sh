@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mode="${1:-release}"
-version="$(cat VERSION)"
+version="${APP_VERSION:-$(cat VERSION)}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Ungültige VERSION" >&2; exit 2; }
 [[ "$mode" == release || "$mode" == debug ]] || exit 2
 # Build both architectures for Intel Mac minis and Apple Silicon.

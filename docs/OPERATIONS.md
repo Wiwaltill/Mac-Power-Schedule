@@ -28,12 +28,9 @@ open "dist/Mac Power Schedule.app"
 
 Das Skript baut eine Universal-App für **x86_64 und arm64**, prüft ihre Signatur und erzeugt `dist/Mac-Power-Schedule.zip`. Die `.app` am besten nach `/Applications` kopieren, bevor der optionale Login-Start aktiviert wird. `swift run PowerSchedule` kann die Oberfläche entwickeln, installiert aber keinen Dienst; dafür das vollständige App-Bundle benutzen.
 
-GitHub Actions baut und testet bei Push und Pull Request. Das ZIP gibt es anschließend unter dem Workflow-Lauf als Artefakt. Noch kein signiertes/notarisiertes öffentliches Release: Standardmäßig wird lokal ad hoc signiert. Bei Downloads kann Gatekeeper die Ausführung blockieren. Für eine öffentliche Distribution mit Developer-ID signieren und anschließend über Apples Notarisierung freigeben; lokale Signaturen ersetzen dies nicht:
+GitHub Actions testet und baut bei Push und Pull Request, ohne ein Release anzulegen. Ein veröffentlichtes GitHub Release startet den separaten Release-Workflow: Er baut den Stand des Release-Tags und hängt ZIP und Prüfsumme an dieses vorhandene Release. Tags haben das Format `v1.2.3` oder `1.2.3`; die App-Version folgt dem Tag. Wähle für neue Release-Tags einen Commit mit dem Release-Workflow. Bereits vorhandene Dateien werden nicht ersetzt.
 
-```sh
-CODESIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' ./scripts/build-app.sh
-# Anschließend ZIP mit xcrun notarytool einreichen, App stapeln und ZIP neu erstellen.
-```
+Für ein bereits vorhandenes Release lässt sich der Workflow „Build app for published release“ unter Actions manuell mit dessen Tag starten. Wenn gleichnamige Assets existieren, bricht der Upload ab, damit insbesondere manuell hochgeladene signierte Builds erhalten bleiben.
 
 ## Einrichten
 
