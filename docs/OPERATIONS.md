@@ -50,6 +50,22 @@ Je VM eine VirtualBox-Aktion anlegen, beispielsweise „Home Assistant sauber st
 
 Die VMs gehören zum **Benutzer, der den Zeitplan anwendet**. Der Dienst führt `VBoxManage` und sämtliche eigenen Aktionen unter dessen UID mit dessen HOME aus. Root besitzt seine eigene VirtualBox-Konfiguration und wird deshalb nicht als VM-Benutzer verwendet.
 
+### Eigener Shutdown-Befehl mit VM-Statusprüfung
+
+Ab 0.3.1 kann eine VirtualBox-Aktion „Eigenen Shutdown-Befehl statt ACPI verwenden“ aktivieren. Das VM-Ziel bleibt der genaue VirtualBox-Name bzw. die UUID. Nach erfolgreichem Befehl wird weiterhin über VBoxManage auf `poweroff` gewartet. Befehl und Statusprüfung teilen sich ein Zeitlimit. Fehlgeschlagene SSH-Verbindungen oder ein weiterlaufender Gast führen zum Abbruch; Fehler werden nicht pauschal ignoriert.
+
+Beispiel für Home Assistant mit bereits eingerichteter SSH-Schlüsselanmeldung und bekanntem Host-Schlüssel. IP und Port anpassen:
+
+```sh
+/usr/bin/ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
+  -i "$HOME/.ssh/mac-power-schedule-ha" -p 2222 root@DEINE_HA_IP \
+  "nohup sh -c 'sleep 2; ha host shutdown' </dev/null >/tmp/mac-power-schedule-shutdown.log 2>&1 &"
+```
+
+Die kurze Verzögerung lässt den SSH-Aufruf regulär zurückkehren, bevor der Gast seine SSH-App beendet. Die erfolgreiche Beauftragung ersetzt keine Shutdown-Bestätigung: Erst VirtualBox `poweroff` erlaubt das Fortsetzen. Wenn der Hintergrundbefehl im Gast fehlschlägt, läuft die Statusprüfung ins Zeitlimit und verhindert den Mac-Shutdown.
+
+Der dedizierte Schlüssel muss ohne interaktive Passwort-/Passphraseabfrage verwendbar und für den installierenden macOS-Benutzer lesbar sein. Der Hintergrunddienst nutzt dessen HOME, aber keinen interaktiven SSH-Agenten. Den SSH-Zugang zuerst mit einem reinen Informationsaufruf vom Mac mini prüfen und dabei den Host-Schlüssel verifizieren. Private Schlüssel nicht in die App-Konfiguration einfügen.
+
 ### Shell und Apps
 
 Shell-Befehle laufen unter `/bin/zsh -c`, ohne interaktive Shell-Profile und mit dem Home-Verzeichnis als Arbeitsverzeichnis. Im Dienst gilt ein definierter PATH: `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`. Verwende absolute Pfade und einen aussagekräftigen Exit-Code. Ein Exit-Code ungleich null bricht den Shutdown ab. Die Standard-Eingabe ist geschlossen; Passwortabfragen sind nicht möglich.

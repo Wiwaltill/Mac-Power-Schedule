@@ -246,4 +246,51 @@ final class PowerCoreTests: XCTestCase {
         XCTAssertThrowsError(try ServiceUpdate.needsReplacement(installed: installed, bundled: bundled))
     }
 
+    func testLegacyPreparationDecodesWithACPIStillEnabled() throws {
+        let data = Data(#"{"id":"F4D4A49D-C401-4919-AD24-744036E79E39","enabled":true,"name":"Old VM","kind":"virtualBox","target":"Homebridge","timeout":180}"#.utf8)
+        let action = try JSONDecoder().decode(Preparation.self, from: data)
+        XCTAssertNil(action.shutdownCommand)
+        var config = Configuration()
+        config.actions = [action]
+        config.actions[0].shutdownCommand = "  "
+        XCTAssertThrowsError(try config.validate())
+    }
+    func testCustomShutdownCommandTracksVMWithoutSendingACPI() throws {
+        let (directory, fixture) = try virtualBoxFixture("""
+        case "$1" in
+          showvminfo) if [ -f off ]; then echo 'VMState="poweroff"'; else echo 'VMState="running"'; fi;;
+          controlvm) touch unexpected-acpi; exit 1;;
+          *) exit 2;;
+        esac
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].shutdownCommand = "touch \"\(directory.appendingPathComponent("off").path)\""
+        try ActionRunner(configuration: config).executeAll { _ in }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("unexpected-acpi").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("off").path))
+        // Already powered off: do not execute even a failing custom command.
+        config.actions[0].shutdownCommand = "exit 7"
+        try ActionRunner(configuration: config).executeAll { _ in }
+    }
+    func testSuccessfulCustomCommandAloneDoesNotConfirmShutdown() throws {
+        let (directory, fixture) = try virtualBoxFixture("echo 'VMState=\"running\"'\n")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].shutdownCommand = "exit 0"
+        config.actions[0].timeout = 1
+        XCTAssertThrowsError(try ActionRunner(configuration: config).executeAll { _ in }) { error in
+            XCTAssertTrue(error.localizedDescription.contains("ausgeschalteter Zustand nicht bestätigt"))
+        }
+    }
+    func testFailedCustomCommandAbortsInsteadOfAssumingRemoteShutdown() throws {
+        let (directory, fixture) = try virtualBoxFixture("echo 'VMState=\"running\"'\n")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].shutdownCommand = "exit 255"
+        XCTAssertThrowsError(try ActionRunner(configuration: config).executeAll { _ in }) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Exit-Code 255"))
+        }
+    }
+
 }

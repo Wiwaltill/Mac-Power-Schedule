@@ -106,13 +106,13 @@ public struct ActionRunner: Sendable {
             var lastStatusError: String?
             var reportedRetry = false
             var lastReportedState: String?
-            func remaining() throws -> Int {
+            func remaining(maximum: Int = 15) throws -> Int {
                 let value = Int(ceil(deadline - ProcessInfo.processInfo.systemUptime))
                 guard value > 0 else {
                     let detail = lastStatusError.map { " Letzter Statusfehler: \($0)" } ?? ""
                     throw ScheduleError.message("VirtualBox-VM hat das Zeitlimit überschritten; ausgeschalteter Zustand nicht bestätigt." + detail)
                 }
-                return min(value, 15)
+                return min(value, maximum)
             }
             func state() throws -> String {
                 while true {
@@ -150,7 +150,15 @@ public struct ActionRunner: Sendable {
             let initial = try state()
             if initial == "poweroff" { return }
             guard initial == "running" else { throw ScheduleError.message("VM ist \(initial). Für ACPI muss sie laufen oder bereits ausgeschaltet sein.") }
-            _ = try run(configuration.vboxPath, ["controlvm", action.target, "acpipowerbutton"], timeout: remaining())
+            if let command = action.shutdownCommand {
+                guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw ScheduleError.message("Eigener Shutdown-Befehl ist leer.")
+                }
+                log("VirtualBox: \(action.target) – eigener Shutdown-Befehl wird ausgeführt.")
+                _ = try run("/bin/zsh", ["-c", "cd \"$HOME\" && {\n" + command + "\n}"], timeout: remaining(maximum: action.timeout))
+            } else {
+                _ = try run(configuration.vboxPath, ["controlvm", action.target, "acpipowerbutton"], timeout: remaining())
+            }
             while true {
                 let current = try state()
                 if current == "poweroff" { return }

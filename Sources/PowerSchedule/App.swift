@@ -224,6 +224,18 @@ struct SettingsView: View {
                                         } else {
                                             TextField(action.kind == .virtualBox ? "VM-Name oder UUID" : "Absoluter Pfad zur .app", text: $action.target)
                                         }
+                                        if action.kind == .virtualBox {
+                                            Toggle("Eigenen Shutdown-Befehl statt ACPI verwenden", isOn: Binding(
+                                                get: { action.shutdownCommand != nil },
+                                                set: { action.shutdownCommand = $0 ? "" : nil }
+                                            ))
+                                            if action.shutdownCommand != nil {
+                                                TextEditor(text: Binding(get: { action.shutdownCommand ?? "" }, set: { action.shutdownCommand = $0 }))
+                                                    .font(.system(.body, design: .monospaced)).frame(height: 75).border(.secondary.opacity(0.3))
+                                                Text("Zum Beispiel SSH mit Schlüsselanmeldung. Erst nach erfolgreichem Befehl wird auf den ausgeschalteten VM-Zustand gewartet. Zeitlimit gilt für Befehl und Statusprüfung zusammen. Keine Kennwörter oder Tokens eintragen.")
+                                                    .font(.caption).foregroundStyle(.secondary)
+                                            }
+                                        }
                                         HStack {
                                             Text("Zeitlimit (Sekunden)")
                                             TextField("180", value: $action.timeout, format: .number.grouping(.never)).frame(width: 80)

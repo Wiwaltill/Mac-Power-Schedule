@@ -13,7 +13,7 @@ public struct DaySchedule: Codable, Equatable, Sendable {
 }
 public enum ActionKind: String, Codable, CaseIterable, Sendable {
     case virtualBox, shell, application
-    public var title: String { switch self { case .virtualBox: "VirtualBox (ACPI + Statusprüfung)"; case .shell: "Shell-Befehl"; case .application: "App starten und auf Ende warten" } }
+    public var title: String { switch self { case .virtualBox: "VirtualBox (Shutdown + Statusprüfung)"; case .shell: "Shell-Befehl"; case .application: "App starten und auf Ende warten" } }
 }
 public struct Preparation: Codable, Identifiable, Equatable, Sendable {
     public var id = UUID()
@@ -22,6 +22,8 @@ public struct Preparation: Codable, Identifiable, Equatable, Sendable {
     public var kind: ActionKind = .virtualBox
     public var target = ""
     public var timeout = 180
+    /// nil keeps ACPI; a command triggers shutdown before the same VirtualBox status tracking.
+    public var shutdownCommand: String?
     public init() {}
 }
 public struct Configuration: Codable, Equatable, Sendable {
@@ -44,6 +46,10 @@ public struct Configuration: Codable, Equatable, Sendable {
         }
         for action in actions where action.enabled {
             guard !action.target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, (1...7200).contains(action.timeout) else { throw ScheduleError.message("Jede Aktion benötigt ein Ziel und ein Zeitlimit von 1–7200 Sekunden.") }
+            if action.kind == .virtualBox, let command = action.shutdownCommand,
+               command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw ScheduleError.message("Der eigene VirtualBox-Shutdown-Befehl darf nicht leer sein.")
+            }
         }
         guard vboxPath.hasPrefix("/") else { throw ScheduleError.message("VBoxManage benötigt einen absoluten Pfad.") }
     }
