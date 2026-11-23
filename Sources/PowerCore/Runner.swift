@@ -94,7 +94,7 @@ public struct ActionRunner: Sendable {
         }
         return try Command.run(executable, arguments, timeout: timeout)
     }
-    public func execute(_ action: Preparation) throws {
+    public func execute(_ action: Preparation, log: (String) -> Void = { _ in }) throws {
         switch action.kind {
         case .shell:
             _ = try run("/bin/zsh", ["-c", "cd \"$HOME\" && {\n" + action.target + "\n}"], timeout: action.timeout)
@@ -103,15 +103,49 @@ public struct ActionRunner: Sendable {
             _ = try run("/usr/bin/open", ["-W", "-a", action.target], timeout: action.timeout)
         case .virtualBox:
             let deadline = ProcessInfo.processInfo.systemUptime + Double(action.timeout)
+            var lastStatusError: String?
+            var reportedRetry = false
+            var lastReportedState: String?
             func remaining() throws -> Int {
                 let value = Int(ceil(deadline - ProcessInfo.processInfo.systemUptime))
-                guard value > 0 else { throw ScheduleError.message("VirtualBox-VM hat das Zeitlimit überschritten.") }
+                guard value > 0 else {
+                    let detail = lastStatusError.map { " Letzter Statusfehler: \($0)" } ?? ""
+                    throw ScheduleError.message("VirtualBox-VM hat das Zeitlimit überschritten; ausgeschalteter Zustand nicht bestätigt." + detail)
+                }
                 return min(value, 15)
             }
             func state() throws -> String {
-                let output = try run(configuration.vboxPath, ["showvminfo", action.target, "--machinereadable"], timeout: remaining())
-                guard let line = output.split(separator: "\n").first(where: { $0.hasPrefix("VMState=") }) else { throw ScheduleError.message("VirtualBox liefert keinen VM-Status.") }
-                return String(line.dropFirst("VMState=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\"\r"))
+                while true {
+                    let output: String
+                    do {
+                        output = try run(configuration.vboxPath, ["showvminfo", action.target, "--machinereadable"], timeout: remaining())
+                    } catch {
+                        let detail = error.localizedDescription
+                        // A closing VirtualBox console can temporarily reject a shared session.
+                        // Retry only this specific read failure, never infer poweroff from an error.
+                        guard !Command.terminationRequested,
+                              detail.contains("Failed to get a console object from the direct session"),
+                              detail.contains("VBOX_E_INVALID_OBJECT_STATE") else { throw error }
+                        lastStatusError = detail
+                        _ = try remaining()
+                        if !reportedRetry {
+                            log("VirtualBox: \(action.target) – Sitzung vorübergehend nicht abfragbar; Status wird bis zum Zeitlimit erneut geprüft.")
+                            reportedRetry = true
+                        }
+                        Thread.sleep(forTimeInterval: min(1, max(0.1, deadline - ProcessInfo.processInfo.systemUptime)))
+                        continue
+                    }
+                    guard let line = output.split(separator: "\n").first(where: { $0.hasPrefix("VMState=") }) else {
+                        throw ScheduleError.message("VirtualBox liefert keinen VM-Status.")
+                    }
+                    let value = String(line.dropFirst("VMState=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\"\r"))
+                    lastStatusError = nil
+                    if value != lastReportedState {
+                        log("VirtualBox: \(action.target) – Zustand \(value).")
+                        lastReportedState = value
+                    }
+                    return value
+                }
             }
             let initial = try state()
             if initial == "poweroff" { return }
@@ -129,7 +163,7 @@ public struct ActionRunner: Sendable {
     public func executeAll(log: (String) -> Void) throws {
         for action in configuration.actions where action.enabled {
             log("Starte: \(action.name)")
-            do { try execute(action); log("Erfolgreich: \(action.name)") }
+            do { try execute(action, log: log); log("Erfolgreich: \(action.name)") }
             catch { throw ScheduleError.message("\(action.name): \(error.localizedDescription)") }
         }
     }

@@ -138,4 +138,92 @@ final class PowerCoreTests: XCTestCase {
         action.timeout = 1
         XCTAssertThrowsError(try ActionRunner(configuration: config).execute(action))
     }
+    private func virtualBoxFixture(_ body: String) throws -> (URL, Configuration) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("VBoxManage")
+        try ("#!/bin/sh\ncd \"$(dirname \"$0\")\"\n" + body).write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        var config = Configuration()
+        config.vboxPath = script.path
+        var action = Preparation()
+        action.name = "Homebridge"
+        action.target = "Homebridge VM"
+        action.timeout = 8
+        config.actions = [action]
+        return (directory, config)
+    }
+
+    func testVirtualBoxRecoversFromConsoleRaceBeforeAndAfterACPI() throws {
+        let (directory, fixture) = try virtualBoxFixture("""
+        case "$1" in
+          showvminfo)
+            count=$(cat calls 2>/dev/null || echo 0)
+            count=$((count + 1)); echo "$count" > calls
+            if [ "$count" = 1 ] || [ "$count" = 3 ]; then
+              echo 'VBoxManage: error: Failed to get a console object from the direct session (VBOX_E_INVALID_OBJECT_STATE)' >&2
+              exit 1
+            fi
+            if [ "$count" = 2 ]; then echo 'VMState="running"'; else echo 'VMState="poweroff"'; fi;;
+          controlvm) echo acpi >> controls;;
+          *) exit 2;;
+        esac
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        var following = Preparation()
+        following.name = "Following action"
+        following.kind = .shell
+        following.target = "touch \"\(directory.appendingPathComponent("continued").path)\""
+        config.actions.append(following)
+        var lines: [String] = []
+        try ActionRunner(configuration: config).executeAll { lines.append($0) }
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("calls"), encoding: .utf8), "4\n")
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("controls"), encoding: .utf8), "acpi\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("continued").path))
+        XCTAssertTrue(lines.contains { $0.contains("vorübergehend nicht abfragbar") })
+        XCTAssertTrue(lines.contains { $0.contains("Zustand poweroff") })
+    }
+
+    func testVirtualBoxPersistentConsoleRaceDoesNotCountAsPoweroff() throws {
+        let (directory, fixture) = try virtualBoxFixture("""
+        case "$1" in
+          showvminfo)
+            if [ ! -f controls ]; then echo 'VMState="running"'; exit 0; fi
+            echo 'VBoxManage: error: Failed to get a console object from the direct session (VBOX_E_INVALID_OBJECT_STATE)' >&2
+            exit 1;;
+          controlvm) echo acpi > controls;;
+          *) exit 2;;
+        esac
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].timeout = 1
+        var following = Preparation()
+        following.name = "Must not run"
+        following.kind = .shell
+        following.target = "exit 0"
+        config.actions.append(following)
+        var lines: [String] = []
+        XCTAssertThrowsError(try ActionRunner(configuration: config).executeAll { lines.append($0) }) { error in
+            XCTAssertTrue(error.localizedDescription.contains("ausgeschalteter Zustand nicht bestätigt"))
+            XCTAssertTrue(error.localizedDescription.contains("VBOX_E_INVALID_OBJECT_STATE"))
+        }
+        XCTAssertFalse(lines.contains("Starte: Must not run"))
+        XCTAssertFalse(lines.contains("Erfolgreich: Homebridge"))
+    }
+
+    func testVirtualBoxUnrelatedStatusErrorsStillFailImmediately() throws {
+        let (directory, config) = try virtualBoxFixture("""
+        echo called >> calls
+        echo 'VBoxManage: error: Permission denied' >&2
+        exit 1
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertThrowsError(try ActionRunner(configuration: config).executeAll { _ in }) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Permission denied"))
+        }
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("calls"), encoding: .utf8), "called\n")
+    }
+
 }
