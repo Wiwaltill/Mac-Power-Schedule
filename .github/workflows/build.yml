@@ -1,0 +1,24 @@
+name: Build and test macOS app
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version
+      - name: Test scheduling and preparation actions
+        run: swift test
+      - name: Build universal app
+        run: scripts/build-app.sh
+      - name: Check shell scripts
+        run: bash -n scripts/build-app.sh scripts/install.sh scripts/uninstall.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mac-Power-Schedule-universal
+          path: dist/Mac-Power-Schedule.zip
