@@ -17,8 +17,46 @@ jobs:
       - name: Build universal app
         run: scripts/build-app.sh
       - name: Check shell scripts
-        run: bash -n scripts/build-app.sh scripts/install.sh scripts/uninstall.sh
+        run: bash -n scripts/build-app.sh scripts/install.sh scripts/uninstall.sh scripts/cleanup-user.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Mac-Power-Schedule-universal
-          path: dist/Mac-Power-Schedule.zip
+          path: |
+            dist/Mac-Power-Schedule.zip
+            dist/SHA256SUMS.txt
+
+  release:
+    name: Publish GitHub release
+    needs: macos
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Mac-Power-Schedule-universal
+          path: dist
+      - name: Publish new version with ZIP and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag exists; leaving it unchanged."
+            exit 0
+          fi
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          gh release create "$tag" dist/Mac-Power-Schedule.zip dist/SHA256SUMS.txt \
+            --target "$RELEASE_COMMIT" --title "Mac Power Schedule $version" \
+            --notes-file "docs/releases/$tag.md" --latest

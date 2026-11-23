@@ -7,10 +7,10 @@ label='de.wiwaltill.MacPowerSchedule'
 if /bin/launchctl print "system/$label" >/dev/null 2>&1; then
     /bin/launchctl bootout "system/$label"
 fi
-if [[ -x "$base/PowerScheduler" ]]; then
-    "$base/PowerScheduler" --remove-owned-events
-fi
+helper="${1:-$base/PowerScheduler}"
+[[ -x "$helper" ]] || { echo 'Helper fehlt; bitte über die vollständige App deinstallieren.' >&2; exit 1; }
+"$helper" --remove-owned-events
 /bin/rm -f "/Library/LaunchDaemons/$label.plist"
 /bin/rm -rf "$base"
 echo 'Systemdienst, Konfiguration, Protokolle und eigene Start-/Wecktermine entfernt.'
-echo 'App und lokale Entwürfe können jetzt gelöscht werden; ggf. zuvor den App-Autostart deaktivieren.'
+echo 'Bei CLI-Deinstallation: App-Autostart, App und lokale Benutzerdaten separat entfernen.'

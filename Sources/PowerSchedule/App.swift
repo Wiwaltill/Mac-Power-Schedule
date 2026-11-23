@@ -65,6 +65,48 @@ import UserNotifications
         } catch { message = "Fehler: \(error.localizedDescription)" }
         refresh()
     }
+    func confirmUninstall() {
+        guard !busy else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Mac Power Schedule vollständig deinstallieren?"
+        alert.informativeText = "Der Systemdienst, alle eigenen Start-/Wecktermine und die Konfiguration samt Protokollen werden entfernt. App-Autostart, lokale Entwürfe, Einstellungen und Cache dieses Benutzers werden gelöscht; die App kommt in den Papierkorb. Laufende Dienstaktionen werden beendet. Gestoppte VMs und bereits gestartete Apps bleiben in ihrem Zustand. Andere Benutzerprofile, externe Skripte und heruntergeladene ZIP-Dateien bleiben erhalten."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Deinstallieren")
+        alert.addButton(withTitle: "Abbrechen")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        busy = true
+        Task {
+            do {
+                // Ask for administrator authorization first. Cancellation leaves local data intact.
+                try Installer.removeSystemService()
+                if SMAppService.mainApp.status != .notRegistered {
+                    try await SMAppService.mainApp.unregister()
+                }
+                loginEnabled = false
+                let notifications = UNUserNotificationCenter.current()
+                notifications.removeAllPendingNotificationRequests()
+                notifications.removeAllDeliveredNotifications()
+                NSApp.disableRelaunchOnLogin()
+                for window in NSApp.windows { window.isRestorable = false }
+                try Installer.removeUserData()
+                let app = Bundle.main.bundleURL
+                guard app.pathExtension == "app", Bundle.main.bundleIdentifier == "de.wiwaltill.MacPowerSchedule.app" else {
+                    throw ScheduleError.message("Systemdienst und Daten entfernt. Dieses Programm ist kein App-Bundle; bitte manuell löschen.")
+                }
+                try Installer.finishCleanupAfterExit()
+                try FileManager.default.trashItem(at: app, resultingItemURL: nil)
+                NSApp.terminate(nil)
+            } catch {
+                busy = false
+                message = "Deinstallation nicht vollständig: \(error.localizedDescription)"
+                let failure = NSAlert()
+                failure.messageText = "Deinstallation nicht abgeschlossen"
+                failure.informativeText = message + " Bereits entfernte Komponenten bleiben entfernt. Du kannst die Deinstallation erneut starten. Falls nur das Verschieben der App fehlschlägt, lösche die App anschließend im Finder."
+                failure.runModal()
+            }
+        }
+    }
     func test() {
         if let data = try? Data(contentsOf: URL(fileURLWithPath: Paths.config)),
            let installed = try? JSONDecoder().decode(Configuration.self, from: data), installed.enabled {
@@ -109,6 +151,8 @@ struct MenuContent: View {
         Divider()
         Text(model.latestStatus)
         Text("Zeitplan läuft als separater Systemdienst")
+        Button("Vollständig deinstallieren …", role: .destructive) { model.confirmUninstall() }.disabled(model.busy)
+        Divider()
         Button("App beenden (Zeitplan bleibt aktiv)") { NSApp.terminate(nil) }
     }
 }
