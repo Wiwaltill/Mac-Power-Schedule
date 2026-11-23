@@ -17,7 +17,7 @@ jobs:
       - name: Build universal app
         run: scripts/build-app.sh
       - name: Check shell scripts
-        run: bash -n scripts/build-app.sh scripts/install.sh scripts/uninstall.sh scripts/cleanup-user.sh
+        run: bash -n scripts/build-app.sh scripts/build-icon.sh scripts/install.sh scripts/uninstall.sh scripts/cleanup-user.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Mac-Power-Schedule-universal

@@ -1,3 +1,5 @@
+<img src="assets/AppIcon.png" width="96" alt="Mac Power Schedule App-Icon">
+
 # ⏻ Mac Power Schedule
 
 **Dein Mac startet nach Plan – und fährt erst herunter, wenn alles bereit ist.**

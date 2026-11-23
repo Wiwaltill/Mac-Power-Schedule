@@ -14,6 +14,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 for product in PowerSchedule PowerScheduler; do
     /usr/bin/lipo -create ".build/arm64-apple-macosx/$mode/$product" ".build/x86_64-apple-macosx/$mode/$product" -output "$app/Contents/MacOS/$product"
 done
+./scripts/build-icon.sh "$app/Contents/Resources/AppIcon.icns"
 cp scripts/cleanup-user.sh "$app/Contents/Resources/cleanup-user.sh"
 cp scripts/uninstall.sh "$app/Contents/Resources/uninstall.sh"
 cp scripts/install.sh "$app/Contents/Resources/install.sh"
@@ -22,6 +23,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>de.wiwaltill.MacPowerSchedule.app</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundleName</key><string>Mac Power Schedule</string>
 <key>CFBundleExecutable</key><string>PowerSchedule</string>
 <key>CFBundlePackageType</key><string>APPL</string>
