@@ -15,6 +15,16 @@ public enum ActionKind: String, Codable, CaseIterable, Sendable {
     case virtualBox, shell, application
     public var title: String { switch self { case .virtualBox: "VirtualBox (Shutdown + Statusprüfung)"; case .shell: "Shell-Befehl"; case .application: "App starten und auf Ende warten" } }
 }
+public enum VirtualBoxShutdownMethod: String, Codable, CaseIterable, Sendable {
+    case acpi, homeAssistantConsole, custom
+    public var title: String {
+        switch self {
+        case .acpi: "ACPI-Signal"
+        case .homeAssistantConsole: "Home Assistant-Konsole"
+        case .custom: "Eigener Befehl"
+        }
+    }
+}
 public struct Preparation: Codable, Identifiable, Equatable, Sendable {
     public var id = UUID()
     public var enabled = true
@@ -22,8 +32,12 @@ public struct Preparation: Codable, Identifiable, Equatable, Sendable {
     public var kind: ActionKind = .virtualBox
     public var target = ""
     public var timeout = 180
-    /// nil keeps ACPI; a command triggers shutdown before the same VirtualBox status tracking.
+    /// Optional custom command. Legacy configurations infer ACPI/custom when shutdownMethod is absent.
     public var shutdownCommand: String?
+    public var shutdownMethod: VirtualBoxShutdownMethod?
+    public var resolvedShutdownMethod: VirtualBoxShutdownMethod {
+        shutdownMethod ?? (shutdownCommand == nil ? .acpi : .custom)
+    }
     public init() {}
 }
 public struct Configuration: Codable, Equatable, Sendable {
@@ -46,8 +60,8 @@ public struct Configuration: Codable, Equatable, Sendable {
         }
         for action in actions where action.enabled {
             guard !action.target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, (1...7200).contains(action.timeout) else { throw ScheduleError.message("Jede Aktion benötigt ein Ziel und ein Zeitlimit von 1–7200 Sekunden.") }
-            if action.kind == .virtualBox, let command = action.shutdownCommand,
-               command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if action.kind == .virtualBox, action.resolvedShutdownMethod == .custom,
+               (action.shutdownCommand ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 throw ScheduleError.message("Der eigene VirtualBox-Shutdown-Befehl darf nicht leer sein.")
             }
         }

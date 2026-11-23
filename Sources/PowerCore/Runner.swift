@@ -149,14 +149,19 @@ public struct ActionRunner: Sendable {
             }
             let initial = try state()
             if initial == "poweroff" { return }
-            guard initial == "running" else { throw ScheduleError.message("VM ist \(initial). Für ACPI muss sie laufen oder bereits ausgeschaltet sein.") }
-            if let command = action.shutdownCommand {
-                guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard initial == "running" else { throw ScheduleError.message("VM ist \(initial). Sie muss laufen oder bereits ausgeschaltet sein.") }
+            switch action.resolvedShutdownMethod {
+            case .homeAssistantConsole:
+                log("VirtualBox: \(action.target) – host shutdown wird über die virtuelle Tastatur an die Home-Assistant-Konsole gesendet.")
+                _ = try run(configuration.vboxPath, ["controlvm", action.target, "keyboardputstring", "host shutdown"], timeout: remaining())
+                _ = try run(configuration.vboxPath, ["controlvm", action.target, "keyboardputscancode", "1c", "9c"], timeout: remaining())
+            case .custom:
+                guard let command = action.shutdownCommand, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw ScheduleError.message("Eigener Shutdown-Befehl ist leer.")
                 }
                 log("VirtualBox: \(action.target) – eigener Shutdown-Befehl wird ausgeführt.")
                 _ = try run("/bin/zsh", ["-c", "cd \"$HOME\" && {\n" + command + "\n}"], timeout: remaining(maximum: action.timeout))
-            } else {
+            case .acpi:
                 _ = try run(configuration.vboxPath, ["controlvm", action.target, "acpipowerbutton"], timeout: remaining())
             }
             while true {

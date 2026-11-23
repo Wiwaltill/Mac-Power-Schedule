@@ -225,11 +225,17 @@ struct SettingsView: View {
                                             TextField(action.kind == .virtualBox ? "VM-Name oder UUID" : "Absoluter Pfad zur .app", text: $action.target)
                                         }
                                         if action.kind == .virtualBox {
-                                            Toggle("Eigenen Shutdown-Befehl statt ACPI verwenden", isOn: Binding(
-                                                get: { action.shutdownCommand != nil },
-                                                set: { action.shutdownCommand = $0 ? "" : nil }
-                                            ))
-                                            if action.shutdownCommand != nil {
+                                            Picker("Shutdown-Methode", selection: Binding(
+                                                get: { action.resolvedShutdownMethod },
+                                                set: { action.shutdownMethod = $0 }
+                                            )) {
+                                                ForEach(VirtualBoxShutdownMethod.allCases, id: \.self) { Text($0.title).tag($0) }
+                                            }
+                                            if action.resolvedShutdownMethod == .homeAssistantConsole {
+                                                Text("Sendet host shutdown und Enter über die virtuelle Tastatur. Voraussetzung: Die VM-Konsole steht am leeren ha >-Prompt. Keine SSH-Einrichtung nötig. Anschließend wird weiterhin auf den ausgeschalteten VM-Zustand gewartet.")
+                                                    .font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            if action.resolvedShutdownMethod == .custom {
                                                 TextEditor(text: Binding(get: { action.shutdownCommand ?? "" }, set: { action.shutdownCommand = $0 }))
                                                     .font(.system(.body, design: .monospaced)).frame(height: 75).border(.secondary.opacity(0.3))
                                                 Text("Zum Beispiel SSH mit Schlüsselanmeldung. Erst nach erfolgreichem Befehl wird auf den ausgeschalteten VM-Zustand gewartet. Zeitlimit gilt für Befehl und Statusprüfung zusammen. Keine Kennwörter oder Tokens eintragen.")

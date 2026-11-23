@@ -50,6 +50,18 @@ Je VM eine VirtualBox-Aktion anlegen, beispielsweise „Home Assistant sauber st
 
 Die VMs gehören zum **Benutzer, der den Zeitplan anwendet**. Der Dienst führt `VBoxManage` und sämtliche eigenen Aktionen unter dessen UID mit dessen HOME aus. Root besitzt seine eigene VirtualBox-Konfiguration und wird deshalb nicht als VM-Benutzer verwendet.
 
+### Home Assistant ohne SSH herunterfahren
+
+Ab 0.3.2 gibt es bei VirtualBox-Aktionen das Auswahlfeld **Shutdown-Methode**:
+
+- **ACPI-Signal**: bisheriger Standard für Homebridge und Gäste mit funktionierender ACPI-Unterstützung.
+- **Home Assistant-Konsole**: tippt `host shutdown` über die virtuelle Tastatur und sendet anschließend Enter. Kein SSH-Zugang und kein eigener Befehl nötig.
+- **Eigener Befehl**: vorhandene Shell-/SSH-Befehle bleiben weiter verfügbar.
+
+Für Home Assistant den bestehenden VM-Namen beibehalten und „Home Assistant-Konsole“ wählen. Die VM-Konsole muss dafür am **leeren `ha >`-Prompt** stehen. Ein Login-Bildschirm, eine andere Konsole oder eine bereits angefangene Eingabe verhindert die zuverlässige Ausführung. Die App erkennt den Prompt nicht automatisch; erst ein bestätigtes `poweroff` zählt als Erfolg. Fehler oder Zeitlimits verhindern den Mac-Shutdown.
+
+Wenn ACPI im Gast wieder funktioniert, im selben Auswahlfeld zurück auf „ACPI-Signal“ wechseln und anwenden. Es gibt keinen automatischen Methodenwechsel. Homebridge kann unverändert auf ACPI bleiben.
+
 ### Eigener Shutdown-Befehl mit VM-Statusprüfung
 
 Ab 0.3.1 kann eine VirtualBox-Aktion „Eigenen Shutdown-Befehl statt ACPI verwenden“ aktivieren. Das VM-Ziel bleibt der genaue VirtualBox-Name bzw. die UUID. Nach erfolgreichem Befehl wird weiterhin über VBoxManage auf `poweroff` gewartet. Befehl und Statusprüfung teilen sich ein Zeitlimit. Fehlgeschlagene SSH-Verbindungen oder ein weiterlaufender Gast führen zum Abbruch; Fehler werden nicht pauschal ignoriert.

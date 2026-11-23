@@ -293,4 +293,88 @@ final class PowerCoreTests: XCTestCase {
         }
     }
 
+    func testHomeAssistantConsoleSendsTextThenEnterAndConfirmsPoweroff() throws {
+        let (directory, fixture) = try virtualBoxFixture("""
+        case "$1" in
+          showvminfo) if [ -f off ]; then echo 'VMState="poweroff"'; else echo 'VMState="running"'; fi;;
+          controlvm)
+            [ "$2" = "Home Assistant" ] || exit 2
+            printf '%s|%s|%s\\n' "$3" "$4" "$5" >> sent
+            case "$3" in
+              keyboardputstring) [ "$4" = 'host shutdown' ] || exit 3; touch typed;;
+              keyboardputscancode) [ -f typed ] && [ "$4" = 1c ] && [ "$5" = 9c ] || exit 4; touch off;;
+              *) exit 5;;
+            esac;;
+          *) exit 6;;
+        esac
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].target = "Home Assistant"
+        config.actions[0].shutdownMethod = .homeAssistantConsole
+        var lines: [String] = []
+        try ActionRunner(configuration: config).executeAll { lines.append($0) }
+        let sent = directory.appendingPathComponent("sent")
+        let expected = "keyboardputstring|host shutdown|\nkeyboardputscancode|1c|9c\n"
+        XCTAssertEqual(try String(contentsOf: sent, encoding: .utf8), expected)
+        XCTAssertTrue(lines.contains { $0.contains("Zustand poweroff") })
+        try ActionRunner(configuration: config).executeAll { _ in }
+        XCTAssertEqual(try String(contentsOf: sent, encoding: .utf8), expected) // Already off: no typing.
+    }
+    func testHomeAssistantKeyboardFailuresAbortBeforeFollowingAction() throws {
+        for failed in ["keyboardputstring", "keyboardputscancode"] {
+            let (directory, fixture) = try virtualBoxFixture("""
+            if [ "$1" = showvminfo ]; then echo 'VMState="running"'; exit 0; fi
+            echo "$3" >> sent
+            if [ "$3" = "\(failed)" ]; then echo 'Keyboard injection failed' >&2; exit 1; fi
+            """)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            var config = fixture
+            config.actions[0].shutdownMethod = .homeAssistantConsole
+            var following = Preparation()
+            following.kind = .shell
+            following.name = "Must not run"
+            following.target = "exit 0"
+            config.actions.append(following)
+            var lines: [String] = []
+            XCTAssertThrowsError(try ActionRunner(configuration: config).executeAll { lines.append($0) })
+            XCTAssertFalse(lines.contains("Starte: Must not run"))
+            let expected = failed == "keyboardputstring" ? "keyboardputstring\n" : "keyboardputstring\nkeyboardputscancode\n"
+            XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("sent"), encoding: .utf8), expected)
+        }
+    }
+    func testHomeAssistantConsoleCannotSucceedIfGuestIgnoresTyping() throws {
+        let (directory, fixture) = try virtualBoxFixture("""
+        if [ "$1" = showvminfo ]; then echo 'VMState="running"'; fi
+        exit 0
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].shutdownMethod = .homeAssistantConsole
+        config.actions[0].timeout = 1
+        XCTAssertThrowsError(try ActionRunner(configuration: config).executeAll { _ in }) { error in
+            XCTAssertTrue(error.localizedDescription.contains("ausgeschalteter Zustand nicht bestätigt"))
+        }
+    }
+    func testShutdownMethodMigrationAndSwitchBackToACPI() throws {
+        var legacy = Preparation()
+        XCTAssertEqual(legacy.resolvedShutdownMethod, .acpi)
+        legacy.shutdownCommand = "exit 7"
+        XCTAssertEqual(try JSONDecoder().decode(Preparation.self, from: JSONEncoder().encode(legacy)).resolvedShutdownMethod, .custom)
+        legacy.shutdownMethod = .homeAssistantConsole
+        XCTAssertEqual(try JSONDecoder().decode(Preparation.self, from: JSONEncoder().encode(legacy)).resolvedShutdownMethod, .homeAssistantConsole)
+        let (directory, fixture) = try virtualBoxFixture("""
+        case "$1" in
+          showvminfo) if [ -f off ]; then echo 'VMState="poweroff"'; else echo 'VMState="running"'; fi;;
+          controlvm) [ "$3" = acpipowerbutton ] || exit 2; touch off;;
+          *) exit 3;;
+        esac
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var config = fixture
+        config.actions[0].shutdownCommand = "exit 7"
+        config.actions[0].shutdownMethod = .acpi
+        try ActionRunner(configuration: config).executeAll { _ in }
+    }
+
 }

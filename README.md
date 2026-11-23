@@ -12,7 +12,7 @@ Native macOS-App mit Menüleiste für **Intel & Apple Silicon · macOS 13+ · De
 
 | Zeitpläne | Sichere Vorbereitung |
 | :--- | :--- |
-| Jeden Tag dieselben Zeiten | VirtualBox: ACPI-Shutdown und auf „ausgeschaltet“ warten |
+| Jeden Tag dieselben Zeiten | VirtualBox: ACPI oder Home-Assistant-Konsole, mit Statusprüfung |
 | Wochentage und Wochenende getrennt | Eigene Shell-/SSH-Befehle und Apps ausführen |
 | Jeden Wochentag einzeln | Reihenfolge, Aktivierung und Zeitlimit je Aktion |
 | Start und Shutdown separat aktivierbar | Bei Fehlern den Mac-Shutdown abbrechen |
